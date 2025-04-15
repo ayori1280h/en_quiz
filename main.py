@@ -33,6 +33,7 @@ def initialize_database():
             option3 TEXT NOT NULL,
             option4 TEXT NOT NULL,
             answer INTEGER NOT NULL CHECK(answer >= 1 AND answer <= 4),
+            translation TEXT,
             explanation TEXT NOT NULL,
             generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -54,37 +55,34 @@ def _generate_via_openrouter(api_key, model, difficulty, assist_prompt):
         "Beginner (A2)": "CEFR A2レベル",
         "Intermediate (B1)": "CEFR B1レベル",
         "Advanced (B2)": "CEFR B2レベル",
+        "Upper-Intermediate (C1)": "CEFR C1レベル",
+        "Proficient (C2)": "CEFR C2レベル",
     }
     target_level = difficulty_map.get(
         difficulty, "CEFR B1レベル")  # Default to B1
 
     # Carefully crafted prompt based on requirements
     prompt_text = f"""
-    Generate {QUESTIONS_PER_GENERATION} multiple-choice English grammar and
-    simple sentence completion questions suitable for beginner to intermediate
-    English learners at the {target_level}. Focus on common grammar points like
-    tenses, phrasal verbs, prepositions, articles, and basic sentence structure.
+    英語学習者向けの多肢選択式の英文法および簡単な文章補完問題を{QUESTIONS_PER_GENERATION}個生成してください。
+    対象レベルは {target_level} です。
+    よく使われる文法項目（時制、句動詞、前置詞、冠詞、基本的な文構造など）に焦点を当ててください。
 
-    Provide the output strictly as a JSON array of objects. Each object must
-    have the following keys:
-    - "question": The question text (string). For sentence completion, use "..."
-                  to indicate the blank.
-    - "options": An array of 4 strings representing the choices.
-    - "answer": The index (starting from 1) of the correct option in the
-                "options" array (integer).
-    - "explanation": A brief explanation of why the answer is correct and
-                     potentially why others are incorrect (string). **解説内容 (explanation) は日本語で記述してください。**
+    出力は厳密にJSONオブジェクトの配列形式で提供してください。各オブジェクトには以下のキーが必要です：
+    - "question": 問題文 (文字列)。文章補完問題の場合は "..." を使用してください。
+    - "options": 選択肢を表す4つの文字列の配列。
+    - "answer": 正解の選択肢のインデックス（1から始まる整数）。
+    - "explanation": 正解がなぜ正しいのか、そして他の選択肢がなぜ不適切なのかを簡潔に説明する**日本語の**解説文（文字列）。
+    - "translation": 問題文 ("question") の日本語訳 (文字列)。文章補間問題の場合は、文章補間の日本語訳も含めてください。
 
-    {f'Additionally, consider the following request for the questions: {assist_prompt}' if assist_prompt else ''}
+    {f'さらに、問題生成に関して以下の要望も考慮してください: {assist_prompt}' if assist_prompt else ''}
 
-    Example format for one question object:
+    1つの問題オブジェクトのフォーマット例:
     {{
       "question": "She ___ watching TV when I arrived.",
+      "translation": "私が到着した時、彼女はテレビを見ていました。",
       "options": ["is", "was", "be", "are"],
       "answer": 2,
-      "explanation": "Use the past continuous tense 'was watching' because the
-                      action was in progress when another past action (arrived)
-                      occurred."
+      "explanation": "過去進行形 'was watching' を使います。これは、過去のある時点（arrived）で進行中だった動作を表します。"
     }}
 
     Ensure you provide exactly {QUESTIONS_PER_GENERATION} distinct question
@@ -144,7 +142,7 @@ def _generate_via_openrouter(api_key, model, difficulty, assist_prompt):
             # Allow partial generation for robustness
         for q in questions_data:
             if not all(k in q for k in ["question", "options", "answer",
-                                        "explanation"]):
+                                        "explanation", "translation"]):
                 raise ValueError(
                     "Generated question object missing required keys.")
             if not isinstance(q["options"], list) or len(q["options"]) != 4:
@@ -183,41 +181,39 @@ def _generate_via_gemini(api_key, model, difficulty, assist_prompt):
         "Beginner (A2)": "CEFR A2レベル",
         "Intermediate (B1)": "CEFR B1レベル",
         "Advanced (B2)": "CEFR B2レベル",
+        "Upper-Intermediate (C1)": "CEFR C1レベル",
+        "Proficient (C2)": "CEFR C2レベル",
     }
     target_level = difficulty_map.get(difficulty, "CEFR B1レベル")
 
     # Construct the prompt specifically for Gemini
     # Ensure it strongly requests JSON output only
     prompt_text = f"""
-    Generate {QUESTIONS_PER_GENERATION} multiple-choice English grammar and
-    simple sentence completion questions suitable for English learners at the {target_level}.
-    Focus on common grammar points like tenses, phrasal verbs, prepositions,
-    articles, and basic sentence structure.
+    英語学習者向けの多肢選択式の英文法および簡単な文章補完問題を{QUESTIONS_PER_GENERATION}個生成してください。
+    対象レベルは {target_level} です。
+    よく使われる文法項目（時制、句動詞、前置詞、冠詞、基本的な文構造など）に焦点を当ててください。
 
-    Provide the output *strictly* as a raw JSON array of objects. Each object must
-    have the following keys:
-    - "question": The question text (string). For sentence completion, use "..."
-                  to indicate the blank.
-    - "options": An array of 4 strings representing the choices.
-    - "answer": The index (starting from 1) of the correct option in the
-                "options" array (integer).
-    - "explanation": A brief explanation of why the answer is correct and
-                     potentially why others are incorrect (string).
-                     **解説内容 (explanation) は日本語で記述してください。**
+    出力は厳密にJSONオブジェクトの配列形式で提供してください。各オブジェクトには以下のキーが必要です：
+    - "question": 問題文 (文字列)。文章補完問題の場合は "..." を使用してください。
+    - "options": 選択肢を表す4つの文字列の配列。
+    - "answer": 正解の選択肢のインデックス（1から始まる整数）。
+    - "explanation": 正解がなぜ正しいのか、そして他の選択肢がなぜ不適切なのかを簡潔に説明する**日本語の**解説文（文字列）。
+    - "translation": 問題文 ("question") の日本語訳 (文字列)。
 
-    {f'Additionally, consider the following request for the questions: {assist_prompt}' if assist_prompt else ''}
+    {f'さらに、問題生成に関して以下の要望も考慮してください: {assist_prompt}' if assist_prompt else ''}
 
-    Example format for one question object:
+    1つの問題オブジェクトのフォーマット例:
     {{
       "question": "She ___ watching TV when I arrived.",
+      "translation": "私が到着した時、彼女はテレビを見ていました。",
       "options": ["is", "was", "be", "are"],
       "answer": 2,
       "explanation": "過去進行形 'was watching' を使います。なぜなら、別の過去の動作（到着した）が発生したときに、その動作が進行中だったからです。"
     }}
 
     Ensure you provide exactly {QUESTIONS_PER_GENERATION} distinct question
-    objects in the JSON array. **Output *only* the raw JSON array, with no
-    introductory text, code block formatting (like ```json), or closing text.**
+    objects in the JSON array. **JSON配列のみを出力してください。導入テキスト、
+    コードブロック形式（例: ```json）、終了テキストは含めないでください。**
     """
 
     data = {
@@ -279,7 +275,7 @@ def _generate_via_gemini(api_key, model, difficulty, assist_prompt):
             # Allow partial generation for robustness
         for q in questions_data:
             if not all(k in q for k in ["question", "options", "answer",
-                                        "explanation"]):
+                                        "explanation", "translation"]):
                 raise ValueError(
                     "Generated question object missing required keys.")
             if not isinstance(q["options"], list) or len(q["options"]) != 4:
@@ -423,7 +419,9 @@ class EnglishQuizApp:
             options_frame, text="Difficulty:", font=default_font)
         difficulty_label.pack(side=tk.LEFT, padx=(0, 5))
         difficulty_options = [
-            "Beginner (A2)", "Intermediate (B1)", "Advanced (B2)"]
+            "Beginner (A2)", "Intermediate (B1)", "Advanced (B2)",
+            "Upper-Intermediate (C1)", "Proficient (C2)"
+        ]
         difficulty_menu = tk.OptionMenu(
             options_frame, self.difficulty_var, *difficulty_options)
         difficulty_menu.config(font=default_font)
@@ -447,7 +445,8 @@ class EnglishQuizApp:
             main_frame, text="Press 'Generate New Questions'",
             font=question_font, wraplength=550, justify=tk.LEFT
         )
-        self.question_label.pack(pady=(10, 15), anchor='w')
+        # Reduced bottom padding
+        self.question_label.pack(pady=(10, 5), anchor='w')
 
         self.option_buttons = []
         self.radio_buttons = []  # Store radio buttons
@@ -579,12 +578,13 @@ class EnglishQuizApp:
             for q in questions_data:
                 try:
                     self.cursor.execute("""
-                        INSERT INTO problems (question, option1, option2, option3, option4, answer, explanation)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO problems (question, option1, option2, option3, option4, answer, explanation, translation)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         q['question'], q['options'][0], q['options'][1],
                         q['options'][2], q['options'][3], q['answer'],
-                        q['explanation']
+                        q['explanation'],
+                        q['translation']  # Add translation value
                     ))
                     saved_count += 1
                 except sqlite3.Error as insert_err:
@@ -615,7 +615,7 @@ class EnglishQuizApp:
         try:
             self.cursor.execute(
                 "SELECT id, question, option1, option2, option3, "
-                "option4, answer, explanation FROM problems ORDER BY id"
+                "option4, answer, explanation, translation FROM problems ORDER BY id"
             )
             rows = self.cursor.fetchall()
             self.questions = []
@@ -625,7 +625,8 @@ class EnglishQuizApp:
                     "question": row[1],
                     "options": [row[2], row[3], row[4], row[5]],
                     "answer": row[6],
-                    "explanation": row[7]
+                    "explanation": row[7],
+                    "translation": row[8]  # Store translation
                 })
 
             if self.questions:
@@ -705,8 +706,12 @@ class EnglishQuizApp:
         # Display explanation
         self.explanation_area.config(state=tk.NORMAL)
         self.explanation_area.delete('1.0', tk.END)
+        # Get translation or default
+        translation_text = q.get('translation', '(日本語訳なし)')
+        explanation_text = q.get('explanation', '(解説なし)')
+        full_explanation = f"日本語訳:\n{translation_text}\n\n解説:\n{explanation_text}"
         self.explanation_area.insert(
-            tk.END, f"解説 (Explanation):\n{q['explanation']}"
+            tk.END, full_explanation
         )
         self.explanation_area.config(state=tk.DISABLED)
 
